@@ -1,13 +1,14 @@
 #include <cv.h>
 #include <highgui.h>
+#include <cstdlib>
 #include <stdlib.h>
 #include <cmath>
 #include <iostream>
 
 
-#define atn(i, a, b) i[a*n+b]
-#define atm(i, a, b) i[a*m+b]
-#define at(i, a, b, c) i[a*c+b]
+#define atn(i, a, b) i[(a)*n+b]
+#define atm(i, a, b) i[(a)*m+b]
+#define at(i, a, b, c) i[(a)*(c)+b]
 
 using namespace cv;
 
@@ -24,37 +25,41 @@ int main(int argc, char const *argv[])
 {
   VideoCapture cap(0);
   if(!cap.isOpened()){  // check if we succeeded
-    std::cout<<"merde\n";
+    std::cout<<"caméra non ouverte\n";
         return -1;
     }
-  namedWindow( "Original image", WINDOW_AUTOSIZE );
-  namedWindow( "Smoothed image", WINDOW_AUTOSIZE );
-  /*namedWindow( "Gradient", WINDOW_AUTOSIZE );
-  namedWindow( "Binary contours", WINDOW_AUTOSIZE );
-  namedWindow( "Houhgh accumulator space", WINDOW_AUTOSIZE );
-*/
     Mat ii;
     Mat mat;
-    unsigned char th  = 160;
+    int th  = 160;
+
+    double *Igx;// = = (double*) calloc(n*m,sizeof(double));
+    double *Igy;// = (double*) calloc(n*m,sizeof(double));
+    double *Ig;// = (double*) malloc(n*m*sizeof(double));
+    uchar* Ib;// = (uchar*) malloc(n*m*sizeof(uchar));
+    int nbFrame = 0;
   while(1==1){  
+    if(th>255) th = 0;
     cap>>mat;
     cvtColor(mat, ii, CV_RGB2GRAY);
     imshow( "Original image", mat ); 
     //imshow( "Smoothed image", ii ); 
-    
     double gamma = 0.2;
     int votes = 100;
     int n = ii.rows;
     int m = ii.cols;
     uchar* I =ii.data;
+
+    if(nbFrame==0){
+      Igx = (double*) calloc(n*m,sizeof(double));
+      Igy = (double*) calloc(n*m,sizeof(double));
+      Ig = (double*) malloc(n*m*sizeof(double));
+      Ib = (uchar*) malloc(n*m*sizeof(uchar));
+    }
+    nbFrame++;
     double *Is = deriche_GL(I,gamma,n,m);
 
-    double *Igx = (double*) calloc(n*m,sizeof(double));
-    double *Igy = (double*) calloc(n*m,sizeof(double));
     roberts(Is,Igx,Igy,n,m);
     int i;
-    double *Ig = (double*) malloc(n*m*sizeof(double));
-    uchar* Ib = (uchar*) malloc(n*m*sizeof(uchar));
 
     for(i=0;i<n*m;i++) {
       double t1 = Igx[i];
@@ -100,11 +105,8 @@ int main(int argc, char const *argv[])
     imshow( "Acc",aa);
     imshow( "Lines",ab);
 
-
-    free(Igx);
-    free(Igy);
-    free(Ig);
-    free(Ib);
+    free(Acc);
+    free(Accmax);
     free(Is);
     char c = waitKey(30);
     if(c == ' ') {
@@ -114,19 +116,23 @@ int main(int argc, char const *argv[])
         cc = 'j';
         cc = waitKey(30);
       }
-    }
-    else if(c=='R'){
+    }else if(c=='R'){
       c='t';
       th++;
-    }
-    else if(c=='T'){
+    }else if(c=='T'){
       c='t';
       th--;
-    }
-    else if(c>=0) {
+    }else if(c=='p') {
+      std::cin >> th;
+    }else if(c>=0) {
       break;
     }
   }
+
+  free(Igx);
+  free(Igy);
+  free(Ig);
+  free(Ib);
   mat.release();
   ii.release();
   return 0;
@@ -178,43 +184,38 @@ double* deriche_GL(uchar* I, double gamma, int n, int m){
       atm(Ic,i,j) = atn(Ia,j,i);
     }
   }
-  for(i=0;i<n*m;i++) Ia[i] = Ic[i];
 
   free(Ib);
-  free(Ic);
+  free(Ia);
 
-  return Ia;
+  return Ic;
 }
 
 void roberts(const double *I, double *Igx, double *Igy, int n, int m){
   int i,j;
-  for (i = 0; i < m-1; i++) {
-    for (j = 0; j < n-1; j++) {
-      Igx[i + m * j] = -I[i + m * j] + I[i + 1 + m * j] - I[i + m * (1 + j)] + I[i + 1 + m * (1 + j)];
-      Igy[i + m * j] = -I[i + m * j] + I[i + m * (1 + j)] - I[i + 1 + m * j] + I[i + 1 + m * (1 + j)];
+  for(i=0;i<n-1;i++){
+    for(j=0;j<m-1;j++){
+      atm(Igx,i,j) = -atm(I,i,j) + atm(I,i,j+1) - atm(I,i+1,j) + atm(I,i+1,j+1);
+      atm(Igy,i,j) = -atm(I,i,j) + atm(I,i+1,j) - atm(I,i,j+1) + atm(I,i+1,j+1);
     }
   }
 }
 
-double* hough_exh(uchar* Ib,int n,int m, int *truc){
+double* hough_exh(uchar* Ib,int n,int m, int *max){
   int maxrho = (int) ceil(sqrt(n*n+m*m));
   std::cout << maxrho << std::endl;
   double* Acc = (double*) calloc(180*maxrho,sizeof(double));
-  *truc = maxrho;
   int i,j,angle;
 
   for(i=1;i<n-1;i++){
     for(j=1;j<m-1;j++){
-      if(Ib[i*m+j] >0){
+      if(atm(Ib,i,j) >0){
         for(angle=0;angle<180;angle++){
           double rad = angle*M_PI/180;
           double rho = j*cos(rad) + i*sin(rad);
           int rho_idx = round(rho/2 + maxrho*1.0/2);
           if(rho_idx>0){
             at(Acc,rho_idx,angle,180) = at(Acc,rho_idx,angle,180)+1;
-          }
-          else if(rho_idx<0){
-            at(Acc,rho_idx+maxrho,angle,180)=at(Acc,rho_idx+maxrho,angle,180)+1;
           }
         }
       }
@@ -226,17 +227,6 @@ double* hough_exh(uchar* Ib,int n,int m, int *truc){
 int* imregionalmax(double* I, int n, int m){
   int* res = (int*) malloc(n*m*sizeof(int));
   int i,j;
-  for(i=0;i<n;i++){
-    for(j=0;j<m;j++){
-      atm(res,i,j) = (atm(I,i,j)>=atm(I,i-1,j-1) && atm(I,i-1,j)>=atm(I,i-1,j+1) 
-                   && atm(I,i,j)>=atm(I,i,j-1) && atm(I,i,j)>=atm(I,i,j+1) 
-                   && atm(I,i,j)>=atm(I,i+1,j-1) && atm(I,i,j)>=atm(I,i+1,j) 
-                   && atm(I,i,j)>=atm(I,i+1,j+1))? 1:0;
-    }
-  }
-}
-
-
   double MG = I[0];
   double MM = I[1];
   double MD = I[1];
@@ -285,23 +275,22 @@ int* imregionalmax(double* I, int n, int m){
 
 Mat hough_peaks_lines(double* Acc, Mat RGB, int votes, int maxrho2){
   Mat res(RGB);
-  int n2 = res.rows;
-  int m2 = res.cols;
-  int n = 180;
-  int m = maxrho2;
-  int maxrho = ceil(sqrt(m*m + n*n));
+  int m2 = res.rows;
+  int n2 = res.cols;
+  int m = 180;
+  int n = maxrho2;
+  int maxrho = ceil(sqrt(m2*m2 + n2*n2));
   int i,j;
-  for(i=0;i<m;i++){
-    for(j=0;j<n;j++){
+  for(i=1;i<m-1;i++){
+    for(j=0;j<n-1;j++){
       if(atm(Acc,j,i)>votes){
         double rho = j*2-maxrho;
         double angle = i*1.0/180;
-        if(angle>0){
-          double mm = -cos(angle)/sin(angle);
-          double c = rho/sin(angle);
-          line(res,Point_<int>(1,mm+c),Point_<int>(n2,mm*n2+c),255);
-        }
-
+        double coss = cos(angle);
+        double sinn = sin(angle);
+        double mm = -coss/sinn;
+        double c = rho/sinn;
+        line(res,Point_<int>(1,mm+c),Point_<int>(n2,mm*n2+c),255);
       }
     }
   }
